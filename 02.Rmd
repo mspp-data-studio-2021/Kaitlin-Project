@@ -1,0 +1,56 @@
+---
+title: "500-Cities_Project"
+author: Kaitlin Edwards
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+### Loading packages
+```{r}
+### loading packages from library
+library(readr) 
+library(tidyr) 
+library(stringr) 
+library(forcats) 
+library(purrr) 
+library(ggplot2)
+library(purrr) 
+library(ggplot2)
+```
+
+### Importing data
+```{r}
+library(tidyverse)
+
+df <- read_csv("500_Cities__Local_Data_for_Better_Health__2019_release.csv")
+```
+
+### Exploring dataframe
+```{r}
+df
+
+glimpse(df)
+
+library(skimr)
+skim(df)
+```
+
+### exploratory vis
+```{r}
+ggplot(data = df) +
+  aes(x = CityName, y = PopulationCount) +
+  geom_col() +
+  labs(
+    title = 'Population of the 500 cities included in the dataset',
+    subtitle = "  ",
+    x = NULL,
+    y = "Population",
+    caption = "Source: CDC 500 Cities: Local Data for Better Health, 2019 release"
+  )
+```
+
+
+```{r}
+```
+
+
