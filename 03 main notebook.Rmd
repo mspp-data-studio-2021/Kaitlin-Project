@@ -4,11 +4,6 @@ author: Kaitlin Edwards
 output: html_document
 date: "`r Sys.Date()`"
 ---
-```{r}
-install.packages("gdal")
-install.packages(geo)
-install.packages(proj)
-```
 
 ### Loading packages
 ```{r}
@@ -24,6 +19,7 @@ library(modelr)
 library(maps)
 library(ggthemes)
 library(tidyverse)
+library(sf)
 ```
 ```{r}
 # Functions
