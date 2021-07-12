@@ -4,6 +4,11 @@ author: Kaitlin Edwards
 output: html_document
 date: "`r Sys.Date()`"
 ---
+```{r}
+install.packages("gdal")
+install.packages(geo)
+install.packages(proj)
+```
 
 ### Loading packages
 ```{r}
@@ -19,7 +24,52 @@ library(modelr)
 library(maps)
 library(ggthemes)
 library(tidyverse)
+```
+```{r}
+# Functions
 
+# Purpose: Visualizes the relationship between two variables.
+# Arguments: x_measure: A character, the measure that will be the independent
+#                       variable.
+#            y_measure: A character, the measure that will be the dependent 
+#                       variable.
+#            x_label: A character, the label for the x_measure.
+#            y_label: A character, the label for the y_measure.
+# Returns: Nothing.
+y_vs_x_plot <- function(x_measure, y_measure, x_label, y_label){
+  y_vs_x <- grouped_cities %>%
+    filter(Measure %in% c(x_measure, y_measure),
+           Data_Value_Type == "Age-adjusted prevalence") %>%
+    spread(key = Measure, value = AVG_Data_Value) %>%
+    rename(!!x_label := x_measure, !!y_label := y_measure)
+  
+  ungrouped_y_vs_x <- y_vs_x %>%
+    ungroup()
+  r <- cor(ungrouped_y_vs_x[x_label], ungrouped_y_vs_x[y_label], 
+           method = "pearson")[[1]]
+  
+  formula <- as.formula(str_c(y_label, "~", x_label))
+  mod <- lm(formula, data = y_vs_x)
+  grid <- y_vs_x %>%
+    ungroup() %>%
+    data_grid(!!sym(x_label) := seq_range(!!sym(x_label), 5)) %>%
+    add_predictions(mod, y_label)
+  
+  ggplot(y_vs_x, aes_string(x = x_label, y = y_label)) +
+    geom_point() +
+    geom_line(data = grid, color = "red", size = 1.5) +
+    labs(title = str_c(str_replace_all(y_label, "_", " "), 
+                       " as a function of ", 
+                       str_replace_all(x_label, "_", " ")),
+         x = str_replace_all(x_label, "_", " "),
+         y = str_replace_all(y_label, "_", " "),
+         caption = bquote(paste(r, " = ", .(format(r, digits = 3)),
+                                ", ", r^2, " = ", 
+                                .(format(r^2, digits = 3)), 
+                                ", Source: 500 Cities"))) +
+    theme(plot.title = element_text(hjust = 0.5),
+          text = element_text(size = 10))
+}
 ```
 
 
@@ -83,6 +133,10 @@ get_states_ranking <- function(measure, measure_label) {
     select(State_Name, Region, Num_Cities, !!ranking_column, !!value_column)
 }
 
+```
+
+```{r}
+states <- sf::st_as_sf(maps::map("state", plot = FALSE, fill = TRUE))
 ```
 
 ```{r}
