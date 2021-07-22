@@ -1,6 +1,7 @@
 # Kaitlin-500-Cities
 
 Getting Started:
+
 You will first need to download and install R and RStudio.
 
 Then clone this project repository and open the file r-project.Rproj to launch the project in R Studio.
