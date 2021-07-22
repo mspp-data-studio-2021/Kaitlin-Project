@@ -1,0 +1,14 @@
+readr
+tidyr
+stringr 
+forcats 
+purrr
+ggplot2
+tidyverse
+modelr
+maps
+ggthemes
+tidyverse
+sf
+mapproj
+wesanderson
