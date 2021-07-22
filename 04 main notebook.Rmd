@@ -1,0 +1,570 @@
+---
+title: "500-Cities_Project"
+author: Kaitlin Edwards
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+
+
+
+### Loading packages
+```{r}
+### loading packages from library
+library(readr) 
+library(tidyr) 
+library(stringr) 
+library(forcats) 
+library(purrr) 
+library(ggplot2)
+library(tidyverse)
+library(modelr)
+library(maps)
+library(ggthemes)
+library(tidyverse)
+library(sf)
+library(mapproj)
+library(wesanderson)
+```
+
+```{r}
+#creating color palette that will be used for the maps
+pal <- wes_palette("Zissou1", 100, type = "continuous")
+```
+
+```{r}
+# Functions
+
+# Purpose: Visualizes the relationship between two variables.
+# Arguments: x_measure: A character, the measure that will be the independent
+#                       variable.
+#            y_measure: A character, the measure that will be the dependent 
+#                       variable.
+#            x_label: A character, the label for the x_measure.
+#            y_label: A character, the label for the y_measure.
+# Returns: Nothing.
+y_vs_x_plot <- function(x_measure, y_measure, x_label, y_label){
+  y_vs_x <- grouped_cities %>%
+    filter(Measure %in% c(x_measure, y_measure),
+           Data_Value_Type == "Age-adjusted prevalence") %>%
+    spread(key = Measure, value = AVG_Data_Value) %>%
+    rename(!!x_label := x_measure, !!y_label := y_measure)
+  
+  ungrouped_y_vs_x <- y_vs_x %>%
+    ungroup()
+  r <- cor(ungrouped_y_vs_x[x_label], ungrouped_y_vs_x[y_label], 
+           method = "pearson")[[1]]
+  
+  formula <- as.formula(str_c(y_label, "~", x_label))
+  mod <- lm(formula, data = y_vs_x)
+  grid <- y_vs_x %>%
+    ungroup() %>%
+    data_grid(!!sym(x_label) := seq_range(!!sym(x_label), 5)) %>%
+    add_predictions(mod, y_label)
+  
+  ggplot(y_vs_x, aes_string(x = x_label, y = y_label)) +
+    geom_point() +
+    geom_line(data = grid, color = "cyan4", size = 1.5) +
+    labs(title = str_c(str_replace_all(y_label, "_", " "), 
+                       " as a function of ", 
+                       str_replace_all(x_label, "_", " ")),
+         x = str_replace_all(x_label, "_", " "),
+         y = str_replace_all(y_label, "_", " "),
+         caption = bquote(paste(r, " = ", .(format(r, digits = 3)),
+                                ", ", r^2, " = ", 
+                                .(format(r^2, digits = 3)), 
+                                ", Source: 500 Cities"))) +
+    theme(plot.title = element_text(hjust = 0.5),
+          text = element_text(size = 10))
+}
+```
+
+
+
+```{r}
+# Purpose: Maps a state abbreviation to a region in the United States.
+# Arguments: state: A character, the state abbreviation in the 
+#                   United States being mapped.
+# Returns: A character, the region.
+state_to_region <- function(state){
+  if (state %in% c("PA", "NJ", "NY", "CT",
+                   "RI", "MA", "VT", "NH", "ME")) {
+    "NORTHEAST"  
+  } else if (state %in% c("DE", "MD", "VA", "WV", 
+                          "KY", "NC", "TN", "SC", "GA", 
+                          "AL", "MS", "AR", "LA", "FL")) {
+    "SOUTHEAST"
+  } else if (state %in% c("OH", "MI", "IN", "WI", "IL", "MN", 
+                          "IA", "MO", "ND", "SD", "NE", "KS")){
+    "MIDWEST"
+  } else if (state %in% c("OK", "NM", "AZ", "TX")){
+    "SOUTHWEST"
+  } else if (state %in% c("MT", "ID", "WA", 
+                          "OR", "WY", "CO", "UT", 
+                          "NV", "CA", "AK", "HI")){
+    "WEST"
+  } else {
+    "NA"
+  }
+}
+
+```
+
+```{r}
+# Purpose: Maps a vector of state abbreviations to their 
+#          respective regions.
+# Arguments: states: A vector of characters, which each is a state 
+#                    abbreviation in the United States.
+# Returns: A vector of characters, which each is a region in the United States.
+vectorized_state_to_region <- function(states){
+  map_chr(states, state_to_region)
+}
+
+```
+
+```{r}
+# Purpose: Gets the United States states' rankings based on one measure.
+# Arguments: measure: A character, the measure, by which the states
+#                     will be ranked.
+# Returns: A tibble, the states ranked by the measure.
+get_states_ranking <- function(measure, measure_label) {
+  ranking_column <- str_c(measure_label, "_Ranking")
+  value_column <- str_c(measure_label, "_Value")
+  grouped_states_by_region %>%
+    filter(Measure == measure,
+           Data_Value_Type == "Age-adjusted prevalence") %>%
+    arrange(AVG_Data_Value) %>%
+    rowid_to_column(ranking_column) %>%
+    rename(!!value_column := AVG_Data_Value) %>%
+    ungroup() %>%
+    select(State_Name, Region, Num_Cities, !!ranking_column, !!value_column)
+}
+
+```
+
+
+```{r}
+states <- sf::st_as_sf(maps::map("state", plot = FALSE, fill = TRUE))
+```
+
+```{r}
+#--------------------------------------------------------------------------#
+# Inputting and organizing data
+
+
+cities <- read_csv("500_Cities__Local_Data_for_Better_Health__2019_release.csv")
+colnames(cities)[colnames(cities) == "StateDesc"] <-  "State_Name"
+cities$State_Name[cities$State_Name == "North Carolin"] <- "North Carolina"
+cities$State_Name[cities$State_Name == "South Carolin"] <- "South Carolina"
+
+grouped_cities <- cities %>%
+  filter(StateAbbr != "US") %>%
+  group_by(Year, StateAbbr, State_Name, CityName, Measure, Data_Value_Type) %>%
+  select(Year, StateAbbr, State_Name, CityName, Measure, Data_Value_Type, Data_Value) %>%
+  summarize(AVG_Data_Value = mean(Data_Value, na.rm = TRUE))
+
+grouped_states <- grouped_cities %>%
+  filter(StateAbbr != "DC") %>%
+  group_by(Year, StateAbbr, State_Name, Measure, Data_Value_Type) %>%
+  select(Year, StateAbbr, State_Name, Measure, Data_Value_Type, AVG_Data_Value) %>%
+  summarize(AVG_Data_Value = mean(AVG_Data_Value, na.rm = TRUE),
+            Num_Cities = n())
+
+grouped_states_by_region <- grouped_states %>%
+  mutate(Region = vectorized_state_to_region(StateAbbr)) %>%
+  filter(Region != "NA")
+```
+
+
+```{r}
+
+### Exploring dataframe
+cities
+
+glimpse(cities)
+
+```
+
+#--------------------------------------------------------------------------#
+```{r}
+# Correlation Analysis (Preventative Measures)
+
+# Poor Physical Health as a function of Lacking Health Insurance
+y_vs_x_plot("Current lack of health insurance among adults aged 18–64 Years",
+            "Physical health not good for >=14 days among adults aged >=18 Years",
+            "Health_Insurance",
+            "Physical_Health")
+
+
+# Dental Health as a function of Dentist Visits
+y_vs_x_plot("Visits to dentist or dental clinic among adults aged >=18 Years",
+            "All teeth lost among adults aged >=65 Years",
+            "Dental_Visit",
+            "Teeth_Loss")
+
+# Annual Checkup as a function of Poor Mental Health
+y_vs_x_plot("Mental health not good for >=14 days among adults aged >=18 Years",
+            "Visits to doctor for routine checkup within the past Year among adults aged >=18 Years",
+            "Poor_Mental_Health",
+            "Annual_Checkup")
+```
+
+
+```{r}
+# Correlation Analysis (Unhealthy Behavior Measures)
+
+# Obesity as a function of No leisure-time physical activity among adults aged ≥18 years
+y_vs_x_plot("No leisure-time physical activity among adults aged >=18 Years",
+            "Obesity among adults aged >=18 Years",
+            "Physical_Inactivity",
+            "Obesity")
+
+# High blood pressure as a function of smoking
+y_vs_x_plot("Current smoking among adults aged >=18 Years",
+            "High blood pressure among adults aged >=18 Years",
+            "Current_Smoking",
+            "High_Blood_Pressure")
+
+# Poor mental health as a function of binge drinking
+y_vs_x_plot("Binge drinking among adults aged >=18 Years",
+            "Mental health not good for >=14 days among adults aged >=18 Years",
+            "Binge_Drinking",
+            "Poor_Mental_Health")
+
+# Coronary Heart Disease as a function of Obesity
+y_vs_x_plot("Obesity among adults aged >=18 Years",
+            "Coronary heart disease among adults aged >=18 Years",
+            "Obesity",
+            "Coronary_Heart_Disease")
+
+```
+
+
+```{r}
+#--------------------------------------------------------------------------#
+# State/Region Health Analysis
+
+# Physical Activity state ranking
+activity_ranking <- get_states_ranking("No leisure-time physical activity among adults aged >=18 Years",
+                                  "Physical_Inactivity")
+
+# Lack of Health Insurance state ranking
+insurance_ranking <- get_states_ranking("Current lack of health insurance among adults aged 18–64 Years",
+                                  "Health_Insurance")
+
+# Physical Health state ranking
+health_ranking <- get_states_ranking("Physical health not good for >=14 days among adults aged >=18 Years",
+                                       "Physical_Health")
+
+# Obesity state ranking
+obesity_ranking <- get_states_ranking("Obesity among adults aged >=18 Years",
+                                      "Obesity")
+
+# Poor Mental Health state ranking
+pmh_ranking <- get_states_ranking("Mental health not good for >=14 days among adults aged >=18 Years", 
+                                  "Poor_Mental_Health")
+
+# No Leisure Time Physical Activity state ranking
+nltpa_ranking <- get_states_ranking("No leisure-time physical activity among adults aged >=18 Years",
+                                    "No_Leisure_Time_Physical_Activity")
+
+# Poor Physical Health state ranking
+pph_ranking <- get_states_ranking("Physical health not good for >=14 days among adults aged >=18 Years", 
+                                  "Poor_Physical_Health")
+```
+
+```{r}
+# State Health Behaviors and Outcomes Ranking
+health_ranking_by_state <- reduce(list(activity_ranking, insurance_ranking, health_ranking, obesity_ranking, pmh_ranking, 
+                                    nltpa_ranking, pph_ranking), full_join) %>%
+  
+mutate(Total_Score = Physical_Inactivity_Ranking + Health_Insurance_Ranking + Physical_Health_Ranking + Obesity_Ranking + Poor_Mental_Health_Ranking + No_Leisure_Time_Physical_Activity_Ranking + Poor_Physical_Health_Ranking) %>%
+  select(State_Name, Region, Num_Cities,
+         Physical_Inactivity_Ranking, Physical_Inactivity_Value,
+         Health_Insurance_Ranking, Health_Insurance_Value,
+         Physical_Health_Ranking, Physical_Health_Value,
+         Obesity_Ranking, Obesity_Value,
+         Poor_Mental_Health_Ranking, Poor_Mental_Health_Value,
+         No_Leisure_Time_Physical_Activity_Ranking, No_Leisure_Time_Physical_Activity_Value,
+         Poor_Physical_Health_Ranking, Poor_Physical_Health_Value,
+         Total_Score) %>%
+  arrange(Total_Score) %>%
+  rowid_to_column("State_Health_Behaviors_and_Outcomes_Ranking")
+
+```
+```{r}
+# Region Health Behaviors and Outcomes Ranking
+
+health_ranking_by_region <- health_ranking_by_state %>%
+  group_by(Region) %>%
+  summarize(Num_States = n(),
+            Physical_Inactivity_Value = mean(Physical_Inactivity_Value),
+            Health_Insurance_Value = mean(Health_Insurance_Value),
+            Physical_Health_Value = mean(Physical_Health_Value),
+            Obesity_Value = mean(Obesity_Value),
+            Poor_Mental_Health_Value = mean(Poor_Mental_Health_Value),
+            No_Leisure_Time_Physical_Activity_Value = mean(No_Leisure_Time_Physical_Activity_Value),
+            Poor_Physical_Health_Value = mean(Poor_Physical_Health_Value)) %>%
+mutate(Physical_Inactivity_Ranking = rank(Physical_Inactivity_Value),
+         Health_Insurance_Ranking = rank(Health_Insurance_Value),
+         Physical_Health_Ranking = rank(Physical_Health_Value),
+         Obesity_Ranking = rank(Obesity_Value),
+         Poor_Mental_Health_Ranking = rank(Poor_Mental_Health_Value),
+         No_Leisure_Time_Physical_Activity_Ranking = rank(No_Leisure_Time_Physical_Activity_Value),
+         Poor_Physical_Health_Ranking = rank(Poor_Physical_Health_Value),
+         Total_Score = Physical_Inactivity_Ranking +
+           Health_Insurance_Ranking +
+           Physical_Health_Ranking +
+           Obesity_Ranking + 
+           Poor_Mental_Health_Ranking +
+           No_Leisure_Time_Physical_Activity_Ranking +
+           Poor_Physical_Health_Ranking) %>%
+  select(Region, Num_States,
+         Physical_Inactivity_Ranking, Physical_Inactivity_Value,
+         Health_Insurance_Ranking, Health_Insurance_Value,
+         Physical_Health_Ranking, Physical_Health_Value,
+         Obesity_Ranking, Obesity_Value,
+         Poor_Mental_Health_Ranking, Poor_Mental_Health_Value,
+         No_Leisure_Time_Physical_Activity_Ranking, No_Leisure_Time_Physical_Activity_Value,
+         Poor_Physical_Health_Ranking, Poor_Physical_Health_Value, Total_Score) %>%
+  arrange(Total_Score) %>%
+  rowid_to_column("Region_Health_Ranking")
+            
+```
+
+
+```{r}
+# State/Region Health Ranking Visualization
+state_health_ranking <- health_ranking_by_state %>%
+  select(State_Name, Region, State_Health_Behaviors_and_Outcomes_Ranking)
+
+state_health_ranking$State_Name <- tolower(state_health_ranking$State_Name)
+
+colnames(state_health_ranking)[colnames(state_health_ranking) == "Region"] <-  "US_Region"
+colnames(state_health_ranking)[colnames(state_health_ranking) == "State_Name"] <-  "region"
+
+
+state_health_ranking$state_health_ranking_group <- cut(state_health_ranking$State_Health_Behaviors_and_Outcomes_Ranking, 
+                                                     breaks = c(0, 10, 20, 30, 40, 50),
+                                                     labels = c("1-10", "11-20", "21-30", "31-40", "41-50"))
+
+```
+
+```{r}
+states
+```
+```{r}
+health_ranking_by_state
+```
+```{r}
+health_states
+```
+
+
+```{r}
+# state health ranking viz
+
+health_states <- left_join(states, health_ranking_by_state, by = c("ID" = "State_Name"))
+
+state_health_ranking_viz <- ggplot() +
+    geom_sf(data = health_states, 
+            aes(fill = ID),
+            color = "black", size = 0.15) +
+scale_fill_manual(name = "State Health Ranking",
+                        breaks = c( "1-10",
+                                    "11-20",
+                                    "21-30",
+                                    "31-40",
+                                    "41-50"),
+                        values = colorspace::diverge_hsv(49)) +
+    theme_map() +
+    theme(legend.position = "right")
+
+print(state_health_ranking_viz)
+
+```
+
+```{r}
+health_states
+
+```
+
+```{r}
+health_ranking_by_region_copy <- health_ranking_by_region
+
+colnames(health_ranking_by_region_copy)[colnames(health_ranking_by_region_copy) == "Region"] <- "US_Region"
+
+region_health_ranking <- left_join(state_health_ranking, health_ranking_by_region_copy, by = "US_Region") %>%
+  select(region, US_Region, Region_Health_Ranking) %>%
+  mutate(Region_Health_Ranking = as.character(Region_Health_Ranking))
+
+region_health_ranking_viz <- ggplot() + 
+                                    geom_map(data = states, map = states,
+                                             aes(x = long, y = lat, map_id = region)) +
+                                    geom_map(data = region_health_ranking, map = states,
+                                             aes(fill = Region_Health_Ranking, map_id = region),
+                                             color = "black", size = 0.25) +
+                                    scale_fill_manual(name = "Region Health Ranking", 
+                                                      breaks = c("1", 
+                                                                 "2", 
+                                                                 "3", 
+                                                                 "4",
+                                                                 "5"),
+                                                      values = colorspace::diverge_hsv(5)) +
+                                    coord_map("mercator") +
+                                    theme_map() +
+                                    theme(legend.position = "right")
+```
+```{r}
+cities
+
+```
+```{r}
+
+mental= cities[which(cities$Measure == "Mental health not good for >=14 days among adults aged >=18 Years"),]
+
+q_mental = mental %>%
+  select(State_Name, Data_Value) %>%
+  group_by(State_Name) %>%
+  summarise(Average_value = mean(Data_Value, na.rm = T)) %>%
+  arrange(desc(Average_value)) %>%
+  as.data.frame()
+names(q_mental)[1] = "region"
+q_mental$region = tolower(q_mental$region)
+
+states <- map_data("state")
+map.df <- merge(states,q_mental, by="region", all=T)
+map.df <- map.df[order(map.df$order),]
+p1= ggplot(map.df, aes(x=long,y=lat,group=group))+
+  geom_polygon(aes(fill=Average_value))+
+  geom_path()+ 
+ scale_fill_gradientn(colours=pal,na.value="grey90") +
+  coord_map() +
+  ggtitle("Mental") + 
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_void()
+
+print(p1)
+
+```
+
+
+```{r}
+
+activity= cities[which(cities$Measure == "No leisure-time physical activity among adults aged >=18 Years"),]
+
+q_activity = activity %>%
+  select(State_Name, Data_Value) %>%
+  group_by(State_Name) %>%
+  summarise(Average_value = mean(Data_Value, na.rm = T)) %>%
+  arrange(desc(Average_value)) %>%
+  as.data.frame()
+names(q_activity)[1] = "region"
+q_activity$region = tolower(q_activity$region)
+
+states <- map_data("state")
+map.df <- merge(states,q_activity, by="region", all=T)
+map.df <- map.df[order(map.df$order),]
+p2= ggplot(map.df, aes(x=long,y=lat,group=group))+
+  geom_polygon(aes(fill=Average_value))+
+  geom_path()+ 
+ scale_fill_gradientn(colours=pal,na.value="grey90")+
+  coord_map() +
+  ggtitle("No leisure-time physical activity among adults aged >=18 Years") + 
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_void()
+
+print(p2)
+```
+
+```{r}
+
+smoking= cities[which(cities$Measure == "Current smoking among adults aged >=18 Years"),]
+
+q_smoking = smoking %>%
+  select(State_Name, Data_Value) %>%
+  group_by(State_Name) %>%
+  summarise(Average_value = mean(Data_Value, na.rm = T)) %>%
+  arrange(desc(Average_value)) %>%
+  as.data.frame()
+names(q_smoking)[1] = "region"
+q_smoking$region = tolower(q_smoking$region)
+
+states <- map_data("state")
+map.df <- merge(states,q_smoking, by="region", all=T)
+map.df <- map.df[order(map.df$order),]
+p3= ggplot(map.df, aes(x=long,y=lat,group=group))+
+  geom_polygon(aes(fill=Average_value))+
+  geom_path()+ 
+ scale_fill_gradientn(colours=pal,na.value="grey90")+
+  coord_map() +
+  ggtitle("Current smoking among adults aged >=18 Years") + 
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_void()
+
+print(p3)
+
+```
+
+```{r}
+
+drinking= cities[which(cities$Measure == "Binge drinking among adults aged >=18 Years"),]
+
+q_drinking = drinking %>%
+  select(State_Name, Data_Value) %>%
+  group_by(State_Name) %>%
+  summarise(Average_value = mean(Data_Value, na.rm = T)) %>%
+  arrange(desc(Average_value)) %>%
+  as.data.frame()
+names(q_drinking)[1] = "region"
+q_drinking$region = tolower(q_drinking$region)
+
+states <- map_data("state")
+map.df <- merge(states,q_drinking, by="region", all=T)
+map.df <- map.df[order(map.df$order),]
+p4= ggplot(map.df, aes(x=long,y=lat,group=group))+
+  geom_polygon(aes(fill=Average_value))+
+  geom_path()+ 
+ scale_fill_gradientn(colours=pal,na.value="grey90")+
+  coord_map() +
+  ggtitle("Binge drinking among adults aged >=18 Years") + 
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_void()
+
+print(p4)
+
+```
+```{r}
+
+obesity= cities[which(cities$Measure == "Obesity among adults aged >=18 Years"),]
+
+q_obesity = obesity %>%
+  select(State_Name, Data_Value) %>%
+  group_by(State_Name) %>%
+  summarise(Average_value = mean(Data_Value, na.rm = T)) %>%
+  arrange(desc(Average_value)) %>%
+  as.data.frame()
+names(q_obesity)[1] = "region"
+q_obesity$region = tolower(q_obesity$region)
+
+states <- map_data("state")
+map.df <- merge(states,q_obesity, by="region", all=T)
+map.df <- map.df[order(map.df$order),]
+p5= ggplot(map.df, aes(x=long,y=lat,group=group))+
+  geom_polygon(aes(fill=Average_value))+
+  geom_path()+ 
+ scale_fill_gradientn(colours=pal,na.value="grey90")+
+  coord_map() +
+  ggtitle("Obesity among adults aged >=18 Years") + 
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme_void()
+
+print(p5)
+```
+
+
+
+
+
+
+
