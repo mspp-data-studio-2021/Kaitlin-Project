@@ -10,12 +10,14 @@ This project uses renv to handle dependency managemnt. When you launch the proje
 renv::init()
 
 
-To replicate the project, download the CSV file from Dropbox to obtain the raw data:
+
+To replicate the project:
+download the CSV file from Dropbox to obtain the raw data:
 https://www.dropbox.com/s/xbk2eal3azcuoyd/500_Cities__Local_Data_for_Better_Health__2019_release.csv?dl=0
 
-Guiding question: Is there a realtionship between population sizes of cities and reported preventative health behaviors of the residents who live there?
 
-Replicating the Analysis
+
+Replicating the analysis:
 The entire analysis and all files can be replicated by running source("Code/final edit.rmd"), which in turn will run all the the other numbered scripts and notebooks in /code.
 
 This notebook reads in the clean tract dataset and produces some maps. The map files are saved to /Images and the rendered notebook is saved to /Docs
