@@ -25,4 +25,8 @@ Replicating the analysis:
 
 The entire analysis and all files can be replicated by running source("Code/final edit.rmd"), which in turn will run all the the other numbered scripts and notebooks in /code.
 
-This notebook reads in the clean tract dataset and produces some maps. The map files are saved to /Images and the rendered notebook is saved to /Docs
+This notebook reads in the clean tract dataset and produces some maps. The map files are saved to /Images.
+
+
+To read more about the process and questions guiding this work, read my blog:
+https://medium.com/@kaitlinedwards16?p=aa2e5cf6636f
